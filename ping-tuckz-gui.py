@@ -30,17 +30,12 @@ class PingTuckzApp:
         self.root.geometry("980x680")
         self.root.minsize(760, 520)
         self.root.configure(bg=BG)
-        self.root.overrideredirect(True)
 
         self.events = queue.Queue()
         self.samples = deque()
         self.worker = None
         self.stop_event = None
         self.close_after_stop = False
-        self.maximized = False
-        self.normal_geometry = None
-        self.title_drag_offset_x = 0
-        self.title_drag_offset_y = 0
         self.graph_window_seconds = GRAPH_DEFAULT_WINDOW_SECONDS
         self.graph_pan_seconds = 0
         self.drag_start_x = None
@@ -58,13 +53,10 @@ class PingTuckzApp:
     def _build_ui(self):
         self._configure_theme()
 
-        shell = tk.Frame(self.root, bg=BORDER, bd=0, highlightthickness=0)
-        shell.pack(fill=tk.BOTH, expand=True)
-
-        self._build_title_bar(shell)
-
-        outer = ttk.Frame(shell, padding=10, style="App.TFrame")
+        outer = ttk.Frame(self.root, padding=10, style="App.TFrame")
         outer.pack(fill=tk.BOTH, expand=True)
+
+        self._build_header(outer)
 
         controls = ttk.Frame(outer, style="App.TFrame")
         controls.pack(fill=tk.X)
@@ -127,46 +119,20 @@ class PingTuckzApp:
         self.log.tag_configure("INFO", foreground=MUTED)
         self.log.tag_configure("ERROR", foreground=TIMEOUT)
 
-    def _build_title_bar(self, parent):
-        title_bar = tk.Frame(parent, bg=PANEL_ALT, height=34, bd=0, highlightthickness=0)
-        title_bar.pack(fill=tk.X)
-        title_bar.pack_propagate(False)
+    def _build_header(self, parent):
+        header = tk.Frame(parent, bg=PANEL_ALT, height=34, bd=0, highlightthickness=0)
+        header.pack(fill=tk.X, pady=(0, 10))
+        header.pack_propagate(False)
 
-        title_label = tk.Label(
-            title_bar,
+        tk.Label(
+            header,
             text="Ping Tuckz",
             bg=PANEL_ALT,
             fg=TEXT,
             font=("Segoe UI", 10, "bold"),
             anchor=tk.W,
             padx=10,
-        )
-        title_label.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-
-        for widget in (title_bar, title_label):
-            widget.bind("<ButtonPress-1>", self.on_title_drag_start)
-            widget.bind("<B1-Motion>", self.on_title_drag)
-            widget.bind("<Double-Button-1>", lambda _event: self.toggle_maximize())
-
-        self.minimize_button = self._title_button(title_bar, "_", self.minimize_window)
-        self.maximize_button = self._title_button(title_bar, "[ ]", self.toggle_maximize)
-        self.close_button = self._title_button(title_bar, "X", self.on_close, close=True)
-
-    def _title_button(self, parent, text, command, close=False):
-        button = tk.Label(
-            parent,
-            text=text,
-            bg=PANEL_ALT,
-            fg=TEXT,
-            font=("Segoe UI", 10),
-            width=5,
-            anchor=tk.CENTER,
-        )
-        button.pack(side=tk.LEFT, fill=tk.Y)
-        button.bind("<Button-1>", lambda _event: command())
-        button.bind("<Enter>", lambda _event: button.configure(bg=TIMEOUT if close else BLUE, fg="#ffffff"))
-        button.bind("<Leave>", lambda _event: button.configure(bg=PANEL_ALT, fg=TEXT))
-        return button
+        ).pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
     def _configure_theme(self):
         style = ttk.Style(self.root)
@@ -258,45 +224,6 @@ class PingTuckzApp:
             self.stop()
             return
         self.root.destroy()
-
-    def on_title_drag_start(self, event):
-        if self.maximized:
-            return
-        self.title_drag_offset_x = event.x_root - self.root.winfo_x()
-        self.title_drag_offset_y = event.y_root - self.root.winfo_y()
-
-    def on_title_drag(self, event):
-        if self.maximized:
-            return
-        x = event.x_root - self.title_drag_offset_x
-        y = event.y_root - self.title_drag_offset_y
-        self.root.geometry(f"+{x}+{y}")
-
-    def minimize_window(self):
-        self.root.overrideredirect(False)
-        self.root.iconify()
-        self.root.after(50, self.restore_borderless)
-
-    def restore_borderless(self):
-        if self.root.state() == "normal":
-            self.root.overrideredirect(True)
-        else:
-            self.root.after(50, self.restore_borderless)
-
-    def toggle_maximize(self):
-        if self.maximized:
-            if self.normal_geometry:
-                self.root.geometry(self.normal_geometry)
-            self.maximized = False
-            self.maximize_button.configure(text="[ ]")
-            return
-
-        self.normal_geometry = self.root.geometry()
-        screen_w = self.root.winfo_screenwidth()
-        screen_h = self.root.winfo_screenheight()
-        self.root.geometry(f"{screen_w}x{screen_h}+0+0")
-        self.maximized = True
-        self.maximize_button.configure(text="[]")
 
     def _run_worker(self, target):
         try:
