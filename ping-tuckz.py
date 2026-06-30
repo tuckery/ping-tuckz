@@ -594,14 +594,26 @@ def get_day_file_paths(dt):
 
 def is_timeout(line):
     """Detect timeout on both Windows ('Request timed out') and macOS ('Request timeout')"""
-    return 'Request timed out' in line or 'Request timeout' in line
+    line_lower = line.lower()
+    return 'request timed out' in line_lower or 'request timeout' in line_lower or 'status=timeout' in line_lower
 
 def parse_latency(ping_line):
     if is_timeout(ping_line):
         return None  # Timeouts handled separately but buffered
-    # Match both Windows (time=12ms) and macOS (time=12.345 ms)
-    time_match = re.search(r'time[=<](\d+\.?\d*)\s*ms', ping_line)
+    # Match raw ping output and Ping Tuckz's normalized record format.
+    time_match = re.search(r'(?:time|latency)[=<](\d+\.?\d*)\s*ms', ping_line, re.IGNORECASE)
     return int(float(time_match.group(1))) if time_match else None
+
+def is_ping_record(line):
+    """Detect raw ping output or Ping Tuckz's normalized TXT record format."""
+    return (
+        'Reply from' in line or
+        'bytes from' in line or
+        'Request timed out' in line or
+        'Request timeout' in line or
+        'latency=' in line or
+        'status=timeout' in line
+    )
 
 def parse_timestamp(line):
     # Extract timestamp from line like: (2025-12-05) @ 09:02:29 pm - Reply from...
@@ -618,6 +630,19 @@ def parse_timestamp(line):
         hour = 0
     year, month, day = map(int, date_str.split('-'))
     return datetime(year, month, day, hour, minute, second)
+
+def normalize_ping_record(line):
+    """Return a privacy-preserving ping record with no target host or reply IP."""
+    timestamp = parse_timestamp(line)
+    if timestamp is None:
+        return line
+    timestamp_str = timestamp.strftime("(%Y-%m-%d) @ %I:%M:%S %p").lower()
+    if is_timeout(line):
+        return f"{timestamp_str} - status=timeout"
+    latency = parse_latency(line)
+    if latency is None:
+        return line
+    return f"{timestamp_str} - latency={latency}ms"
 
 def _recover_chunk_metadata(event_html):
     """Parse event HTML to recover chunk metadata (list of CSS class sequences per chunk)."""
@@ -700,8 +725,7 @@ def _compute_stats_from_txt(txt_path):
                line.startswith('===') or line.startswith('---') or line.startswith('['):
                 continue
             # Only process actual ping response lines
-            if 'Reply from' not in line and 'bytes from' not in line and \
-               'Request timed out' not in line and 'Request timeout' not in line:
+            if not is_ping_record(line):
                 continue
 
             total_pings += 1
@@ -742,14 +766,13 @@ def _build_latency_graph_payload(txt_path):
             if line.startswith('Session Summary') or line.startswith('All Individual') or \
                line.startswith('===') or line.startswith('---') or line.startswith('['):
                 continue
-            if 'Reply from' not in line and 'bytes from' not in line and \
-               'Request timed out' not in line and 'Request timeout' not in line:
+            if not is_ping_record(line):
                 continue
             ts = parse_timestamp(line)
             if ts is None:
                 continue
             sec = ts.hour * 3600 + ts.minute * 60 + ts.second
-            if 'Request timed out' in line or 'Request timeout' in line:
+            if is_timeout(line):
                 points.append([sec, None])
             else:
                 latency = parse_latency(line)
@@ -995,6 +1018,7 @@ def output_chunk(title, all_indices):
         html_header_line = f'{separator}{date_header_html}<div class="event" id="chunk-{chunk_index}" data-start-sec="{start_sec}" data-end-sec="{end_sec}" data-peak="{peak_score}"><div class="header">{title} | Pings {min_idx + 1}–{max_idx + 1} | {chunk_date_str} | {time_range_html}</div>\n'
         html_body = ''
         for line in event_lines:
+            line = normalize_ping_record(line)
             ping_line = line.split(' - ', 1)[1] if ' - ' in line else line
             latency = parse_latency(ping_line)
             css_class = 'timeout' if latency is None else get_html_class(latency)
@@ -1130,7 +1154,6 @@ try:
         # Add timestamp (12-hour without ms)
         now = datetime.now()
         timestamp_str = now.strftime("(%Y-%m-%d) @ %I:%M:%S %p").lower()  # Lowercase am/pm for consistency
-        formatted_line = f"{timestamp_str} - {line}"
 
         # --- Midnight crossing check ---
         if now.date() != current_day_date:
@@ -1155,6 +1178,7 @@ try:
 
         # Check for timeout
         if is_timeout(line):
+            formatted_line = f"{timestamp_str} - status=timeout"
             timeout_lines.append(formatted_line)
             session_timeouts += 1
             # Stream to stdout in red
@@ -1181,6 +1205,7 @@ try:
         latency = parse_latency(line)
         if latency is None:
             continue
+        formatted_line = f"{timestamp_str} - latency={latency}ms"
 
         # Update day-level and session-level stats
         if latency < 50:

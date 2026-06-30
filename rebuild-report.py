@@ -24,11 +24,25 @@ else:
     HTML_OUTPUT_FILE = os.path.join("Results", "2025-12-05-rebuilt.html")
 
 def parse_latency(ping_line):
-    if 'Request timed out' in ping_line or 'Request timeout' in ping_line:
+    if is_timeout(ping_line):
         return None
-    # Match both Windows (time=12ms) and macOS (time=12.345 ms)
-    time_match = re.search(r'time[=<](\d+\.?\d*)\s*ms', ping_line)
+    # Match raw ping output and Ping Tuckz's normalized record format.
+    time_match = re.search(r'(?:time|latency)[=<](\d+\.?\d*)\s*ms', ping_line, re.IGNORECASE)
     return int(float(time_match.group(1))) if time_match else None
+
+def is_timeout(line):
+    line_lower = line.lower()
+    return 'request timed out' in line_lower or 'request timeout' in line_lower or 'status=timeout' in line_lower
+
+def is_ping_record(line):
+    return (
+        'Reply from' in line or
+        'bytes from' in line or
+        'Request timed out' in line or
+        'Request timeout' in line or
+        'latency=' in line or
+        'status=timeout' in line
+    )
 
 def parse_timestamp(line):
     # Extract timestamp from line like: (2025-12-05) @ 09:02:29 pm - Reply from...
@@ -45,6 +59,19 @@ def parse_timestamp(line):
         hour = 0
     year, month, day = map(int, date_str.split('-'))
     return datetime(year, month, day, hour, minute, second)
+
+def normalize_ping_record(line):
+    """Return a privacy-preserving ping record with no target host or reply IP."""
+    timestamp = parse_timestamp(line)
+    if timestamp is None:
+        return line
+    timestamp_str = timestamp.strftime("(%Y-%m-%d) @ %I:%M:%S %p").lower()
+    if is_timeout(line):
+        return f"{timestamp_str} - status=timeout"
+    latency = parse_latency(line)
+    if latency is None:
+        return line
+    return f"{timestamp_str} - latency={latency}ms"
 
 def get_html_class(latency):
     if latency is None:
@@ -197,6 +224,7 @@ def output_chunk(title, all_indices):
         html_header = f'{separator}{date_header_html}<div class="event" id="chunk-{chunk_index}" data-start-sec="{start_sec}" data-end-sec="{end_sec}" data-peak="{peak_score}"><div class="header">{title} | Pings {min_idx + 1}–{max_idx + 1} | {chunk_date_str} | {time_range_html}</div>\n'
         html_body = ''
         for line in event_lines:
+            line = normalize_ping_record(line)
             ping_line = line.split(' - ', 1)[1] if ' - ' in line else line
             latency = parse_latency(ping_line)
             css_class = 'timeout' if latency is None else get_html_class(latency)
@@ -281,14 +309,13 @@ def _build_latency_graph_payload(txt_path):
             if line.startswith('Session Summary') or line.startswith('All Individual') or \
                line.startswith('===') or line.startswith('---') or line.startswith('['):
                 continue
-            if 'Reply from' not in line and 'bytes from' not in line and \
-               'Request timed out' not in line and 'Request timeout' not in line:
+            if not is_ping_record(line):
                 continue
             ts = parse_timestamp(line)
             if ts is None:
                 continue
             sec = ts.hour * 3600 + ts.minute * 60 + ts.second
-            if 'Request timed out' in line or 'Request timeout' in line:
+            if is_timeout(line):
                 points.append([sec, None])
             else:
                 latency = parse_latency(line)
@@ -786,9 +813,9 @@ with open(TXT_LOG_FILE, 'r', encoding='utf-8') as f:
         # Skip empty lines and chunk headers
         if not line or line.startswith('=') or line.startswith('---') or line.startswith('Session Summary') or line.startswith('All Individual') or line.startswith('[') or 'Abnormality Chunk:' in line or 'Abnormality:' in line or 'Pings ' in line or 'Timestamp:' in line:
             continue
-        # Only process lines that look like ping responses or timeouts
-        if 'Reply from' in line or 'Request timed out' in line or 'bytes from' in line or 'Request timeout' in line:
-            all_ping_lines.append(line)
+        # Only process lines that look like ping responses or normalized records.
+        if is_ping_record(line):
+            all_ping_lines.append(normalize_ping_record(line))
 
 print(f"Found {len(all_ping_lines)} ping lines")
 
@@ -831,7 +858,7 @@ for line in all_ping_lines:
     total_pings += 1
     
     # Check for timeout
-    if 'Request timed out' in line:
+    if is_timeout(line):
         timeout_lines.append(line)
         buffer.append((timestamp, None, line))
         current_idx = len(buffer) - 1

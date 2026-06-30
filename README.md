@@ -41,6 +41,12 @@ Results are saved in the `Results` folder. The tool creates one text file and on
 
 Open the HTML file in a browser to review the day's connection history, summaries, event chunks, and latency graph.
 
+## Privacy
+
+Ping Tuckz stores results locally. Result files record timestamps, latency values, and timeout events; they do not store raw ping output, target hostnames, reply IP addresses, usernames, environment variables, or system paths.
+
+Review result files before sharing them, because timestamps can still reveal when monitoring was running.
+
 ## Direct Python Use
 
 You can also run the script directly:
