@@ -4,7 +4,6 @@ from collections import deque
 from datetime import datetime, timedelta
 import tkinter as tk
 from tkinter import ttk
-from tkinter.scrolledtext import ScrolledText
 
 import ping_tuckz_core as core
 
@@ -84,8 +83,10 @@ class PingTuckzApp:
 
         ttk.Label(outer, textvariable=self.files_var, style="Muted.TLabel").pack(fill=tk.X, anchor=tk.W)
 
-        self.log = ScrolledText(
-            outer,
+        log_frame = tk.Frame(outer, bg=BORDER, highlightthickness=0, bd=0)
+        log_frame.pack(fill=tk.BOTH, expand=True, pady=(8, 0))
+        self.log = tk.Text(
+            log_frame,
             height=18,
             wrap=tk.WORD,
             state=tk.DISABLED,
@@ -94,13 +95,21 @@ class PingTuckzApp:
             fg=TEXT,
             insertbackground=TEXT,
             relief=tk.FLAT,
-            borderwidth=1,
-            highlightthickness=1,
-            highlightbackground=BORDER,
+            borderwidth=0,
+            padx=8,
+            pady=6,
             selectbackground=PANEL_ALT,
             selectforeground=TEXT,
         )
-        self.log.pack(fill=tk.BOTH, expand=True, pady=(8, 0))
+        self.log_scrollbar = ttk.Scrollbar(
+            log_frame,
+            orient=tk.VERTICAL,
+            command=self.log.yview,
+            style="Log.Vertical.TScrollbar",
+        )
+        self.log.configure(yscrollcommand=self.log_scrollbar.set)
+        self.log.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(1, 0), pady=1)
+        self.log_scrollbar.pack(side=tk.RIGHT, fill=tk.Y, padx=(0, 1), pady=1)
         self.log.tag_configure("NORMAL", foreground="#b0b0b0")
         self.log.tag_configure("MEDIUM", foreground=MEDIUM)
         self.log.tag_configure("HIGH", foreground=HIGH)
@@ -141,6 +150,22 @@ class PingTuckzApp:
             "TEntry",
             fieldbackground=[("disabled", "#242424")],
             foreground=[("disabled", "#777777")],
+        )
+        style.configure(
+            "Log.Vertical.TScrollbar",
+            background=PANEL_ALT,
+            troughcolor=BG,
+            bordercolor=BORDER,
+            darkcolor=PANEL_ALT,
+            lightcolor=PANEL_ALT,
+            arrowcolor=MUTED,
+            relief=tk.FLAT,
+            width=14,
+        )
+        style.map(
+            "Log.Vertical.TScrollbar",
+            background=[("active", BLUE), ("pressed", BLUE)],
+            arrowcolor=[("active", TEXT), ("pressed", TEXT)],
         )
 
     def start(self):
