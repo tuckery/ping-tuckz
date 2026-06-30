@@ -583,12 +583,19 @@ def _build_chunk_nav_html(metadata_list, has_graph=False):
 
 def get_day_file_paths(dt):
     """Return (txt_path, htm_path) for the given datetime's date.
-    Naming: 2026-02-13.txt / 2026-02-13.html
+    Naming: 2026.06.30-Jun.Tues.30.txt / 2026.06.30-Jun.Tues.30.htm
     """
-    basename = dt.strftime("%Y-%m-%d")
+    day_abbrevs = {'Mon': 'Mon', 'Tue': 'Tues', 'Wed': 'Wed', 'Thu': 'Thurs', 'Fri': 'Fri', 'Sat': 'Sat', 'Sun': 'Sun'}
+    year = dt.strftime("%Y")
+    month_num = dt.strftime("%m")
+    day_padded = dt.strftime("%d")
+    day_abbrev = day_abbrevs[dt.strftime("%a")]
+    month_abbrev = dt.strftime("%b")
+    day_num = str(dt.day)
+    basename = f"{year}.{month_num}.{day_padded}-{month_abbrev}.{day_abbrev}.{day_num}"
     return (
         os.path.join(OUTPUT_DIR, f"{basename}.txt"),
-        os.path.join(OUTPUT_DIR, f"{basename}.html"),
+        os.path.join(OUTPUT_DIR, f"{basename}.htm"),
     )
 
 def is_timeout(line):

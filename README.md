@@ -45,7 +45,7 @@ The tool groups slow replies and timeouts into events so short problem periods a
 
 ## Output Files
 
-Results are saved in the `Results` folder. The tool creates one text file and one HTML report per day, named by date, such as `2026-02-13.txt` and `2026-02-13.html`.
+Results are saved in the `Results` folder. The tool creates one text file and one HTML report per day, named like `2026.06.30-Jun.Tues.30.txt` and `2026.06.30-Jun.Tues.30.htm`.
 
 Open the HTML file in a browser to review the day's connection history, summaries, event chunks, and latency graph.
 

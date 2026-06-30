@@ -20,8 +20,8 @@ if len(sys.argv) >= 3:
     TXT_LOG_FILE = sys.argv[1]
     HTML_OUTPUT_FILE = sys.argv[2]
 else:
-    TXT_LOG_FILE = os.path.join("Results", "2025-12-05.txt")
-    HTML_OUTPUT_FILE = os.path.join("Results", "2025-12-05-rebuilt.html")
+    TXT_LOG_FILE = os.path.join("Results", "2025.12.05-Dec.Fri.5.txt")
+    HTML_OUTPUT_FILE = os.path.join("Results", "2025.12.05-Dec.Fri.5-rebuilt.htm")
 
 def parse_latency(ping_line):
     if is_timeout(ping_line):
