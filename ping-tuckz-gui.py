@@ -13,6 +13,7 @@ import ping_tuckz_core as core
 GRAPH_DEFAULT_WINDOW_SECONDS = 60
 GRAPH_MIN_WINDOW_SECONDS = 60
 GRAPH_MAX_WINDOW_SECONDS = 1800
+GRAPH_WINDOW_STEP_SECONDS = 60
 BG = "#1a1a1a"
 PANEL = "#2a2a2a"
 PANEL_ALT = "#1e2a3a"
@@ -423,12 +424,12 @@ class PingTuckzApp:
 
     def on_graph_wheel(self, event):
         if getattr(event, "num", None) == 4 or getattr(event, "delta", 0) > 0:
-            zoom_factor = 0.8
+            direction = -1
         else:
-            zoom_factor = 1.25
+            direction = 1
 
         old_window = self.graph_window_seconds
-        new_window = self.clamp_graph_window(old_window * zoom_factor)
+        new_window = self.clamp_graph_window(old_window + direction * GRAPH_WINDOW_STEP_SECONDS)
         if new_window == old_window:
             return
 
@@ -460,11 +461,8 @@ class PingTuckzApp:
         plot_w = max(width - pad_l - pad_r, 1)
         plot_h = max(height - pad_t - pad_b, 1)
 
-        window_minutes = self.graph_window_seconds / 60
-        if window_minutes.is_integer():
-            title = f"Last {int(window_minutes)} minute{'s' if window_minutes != 1 else ''}"
-        else:
-            title = f"Last {self.graph_window_seconds:.0f} seconds"
+        window_minutes = int(self.graph_window_seconds // 60)
+        title = f"Last {window_minutes} minute{'s' if window_minutes != 1 else ''}"
         canvas.create_text(pad_l, 8, anchor=tk.W, fill=BLUE, text=title)
         canvas.create_line(pad_l, pad_t, pad_l, pad_t + plot_h, fill=BORDER)
         canvas.create_line(pad_l, pad_t + plot_h, pad_l + plot_w, pad_t + plot_h, fill=BORDER)
