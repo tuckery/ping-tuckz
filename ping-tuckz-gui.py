@@ -9,7 +9,9 @@ from tkinter.scrolledtext import ScrolledText
 import ping_tuckz_core as core
 
 
-GRAPH_WINDOW_SECONDS = 300
+GRAPH_DEFAULT_WINDOW_SECONDS = 60
+GRAPH_MIN_WINDOW_SECONDS = 60
+GRAPH_MAX_WINDOW_SECONDS = 1800
 BG = "#1a1a1a"
 PANEL = "#2a2a2a"
 PANEL_ALT = "#1e2a3a"
@@ -35,7 +37,7 @@ class PingTuckzApp:
         self.worker = None
         self.stop_event = None
         self.close_after_stop = False
-        self.graph_window_seconds = GRAPH_WINDOW_SECONDS
+        self.graph_window_seconds = GRAPH_DEFAULT_WINDOW_SECONDS
         self.graph_pan_seconds = 0
         self.drag_start_x = None
         self.drag_start_pan_seconds = 0
@@ -76,6 +78,9 @@ class PingTuckzApp:
         self.graph.bind("<ButtonPress-1>", self.on_graph_drag_start)
         self.graph.bind("<B1-Motion>", self.on_graph_drag)
         self.graph.bind("<ButtonRelease-1>", self.on_graph_drag_end)
+        self.graph.bind("<MouseWheel>", self.on_graph_wheel)
+        self.graph.bind("<Button-4>", self.on_graph_wheel)
+        self.graph.bind("<Button-5>", self.on_graph_wheel)
 
         ttk.Label(outer, textvariable=self.files_var, style="Muted.TLabel").pack(fill=tk.X, anchor=tk.W)
 
@@ -147,6 +152,7 @@ class PingTuckzApp:
         self.stop_event = threading.Event()
         self.close_after_stop = False
         self.samples.clear()
+        self.graph_window_seconds = GRAPH_DEFAULT_WINDOW_SECONDS
         self.graph_pan_seconds = 0
         self.drag_start_x = None
         self.drag_start_pan_seconds = 0
@@ -260,6 +266,9 @@ class PingTuckzApp:
     def clamp_graph_pan(self, value):
         return max(0, min(value, self.get_max_pan_seconds()))
 
+    def clamp_graph_window(self, value):
+        return max(GRAPH_MIN_WINDOW_SECONDS, min(value, GRAPH_MAX_WINDOW_SECONDS))
+
     def on_graph_drag_start(self, event):
         self.drag_start_x = event.x
         self.drag_start_pan_seconds = self.graph_pan_seconds
@@ -278,6 +287,30 @@ class PingTuckzApp:
     def on_graph_drag_end(self, _event):
         self.drag_start_x = None
 
+    def on_graph_wheel(self, event):
+        if getattr(event, "num", None) == 4 or getattr(event, "delta", 0) > 0:
+            zoom_factor = 0.8
+        else:
+            zoom_factor = 1.25
+
+        old_window = self.graph_window_seconds
+        new_window = self.clamp_graph_window(old_window * zoom_factor)
+        if new_window == old_window:
+            return
+
+        width = max(self.graph.winfo_width(), 10)
+        pad_l, pad_r = 48, 16
+        plot_w = max(width - pad_l - pad_r, 1)
+        pointer_fraction = max(0, min(1, (event.x - pad_l) / plot_w))
+        latest_time = self.get_latest_graph_time()
+        old_right = latest_time - timedelta(seconds=self.graph_pan_seconds)
+        pointer_time = old_right - timedelta(seconds=old_window * (1 - pointer_fraction))
+        new_right = pointer_time + timedelta(seconds=new_window * (1 - pointer_fraction))
+
+        self.graph_window_seconds = new_window
+        self.graph_pan_seconds = self.clamp_graph_pan((latest_time - new_right).total_seconds())
+        self.draw_graph()
+
     def format_axis_time(self, timestamp, crosses_midnight):
         time_text = timestamp.strftime("%I:%M:%S %p").lstrip("0").lower()
         if crosses_midnight:
@@ -293,7 +326,12 @@ class PingTuckzApp:
         plot_w = max(width - pad_l - pad_r, 1)
         plot_h = max(height - pad_t - pad_b, 1)
 
-        canvas.create_text(pad_l, 8, anchor=tk.W, fill=BLUE, text="Last 5 minutes")
+        window_minutes = self.graph_window_seconds / 60
+        if window_minutes.is_integer():
+            title = f"Last {int(window_minutes)} minute{'s' if window_minutes != 1 else ''}"
+        else:
+            title = f"Last {self.graph_window_seconds:.0f} seconds"
+        canvas.create_text(pad_l, 8, anchor=tk.W, fill=BLUE, text=title)
         canvas.create_line(pad_l, pad_t, pad_l, pad_t + plot_h, fill=BORDER)
         canvas.create_line(pad_l, pad_t + plot_h, pad_l + plot_w, pad_t + plot_h, fill=BORDER)
 
