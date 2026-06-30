@@ -10,6 +10,16 @@ import ping_tuckz_core as core
 
 
 GRAPH_WINDOW_SECONDS = 300
+BG = "#1a1a1a"
+PANEL = "#2a2a2a"
+PANEL_ALT = "#1e2a3a"
+BORDER = "#444444"
+TEXT = "#e0e0e0"
+MUTED = "#c0c8d0"
+BLUE = "#4a9eff"
+MEDIUM = "#ff8c00"
+HIGH = "#ff4444"
+TIMEOUT = "#ff6666"
 
 
 class PingTuckzApp:
@@ -18,6 +28,7 @@ class PingTuckzApp:
         self.root.title("Ping Tuckz")
         self.root.geometry("980x680")
         self.root.minsize(760, 520)
+        self.root.configure(bg=BG)
 
         self.events = queue.Queue()
         self.samples = deque()
@@ -35,38 +46,90 @@ class PingTuckzApp:
         self.root.after(100, self.process_events)
 
     def _build_ui(self):
-        outer = ttk.Frame(self.root, padding=10)
+        self._configure_theme()
+
+        outer = ttk.Frame(self.root, padding=10, style="App.TFrame")
         outer.pack(fill=tk.BOTH, expand=True)
 
-        controls = ttk.Frame(outer)
+        controls = ttk.Frame(outer, style="App.TFrame")
         controls.pack(fill=tk.X)
 
-        ttk.Label(controls, text="Target").pack(side=tk.LEFT)
+        ttk.Label(controls, text="Target", style="App.TLabel").pack(side=tk.LEFT)
         self.target_entry = ttk.Entry(controls, textvariable=self.target_var, width=32)
         self.target_entry.pack(side=tk.LEFT, padx=(6, 12))
 
-        self.start_button = ttk.Button(controls, text="Start", command=self.start)
+        self.start_button = ttk.Button(controls, text="Start", command=self.start, style="App.TButton")
         self.start_button.pack(side=tk.LEFT)
-        self.stop_button = ttk.Button(controls, text="Stop", command=self.stop, state=tk.DISABLED)
+        self.stop_button = ttk.Button(controls, text="Stop", command=self.stop, state=tk.DISABLED, style="App.TButton")
         self.stop_button.pack(side=tk.LEFT, padx=(6, 12))
 
-        ttk.Label(controls, textvariable=self.status_var).pack(side=tk.LEFT, padx=(0, 12))
-        ttk.Label(controls, textvariable=self.latest_var).pack(side=tk.LEFT)
+        ttk.Label(controls, textvariable=self.status_var, style="App.TLabel").pack(side=tk.LEFT, padx=(0, 12))
+        ttk.Label(controls, textvariable=self.latest_var, style="App.TLabel").pack(side=tk.LEFT)
 
-        self.graph = tk.Canvas(outer, height=220, bg="#111827", highlightthickness=1, highlightbackground="#374151")
+        self.graph = tk.Canvas(outer, height=220, bg=BG, highlightthickness=1, highlightbackground=BORDER)
         self.graph.pack(fill=tk.X, pady=(10, 8))
         self.graph.bind("<Configure>", lambda _event: self.draw_graph())
 
-        ttk.Label(outer, textvariable=self.files_var).pack(fill=tk.X, anchor=tk.W)
+        ttk.Label(outer, textvariable=self.files_var, style="Muted.TLabel").pack(fill=tk.X, anchor=tk.W)
 
-        self.log = ScrolledText(outer, height=18, wrap=tk.WORD, state=tk.DISABLED, font=("Consolas", 10))
+        self.log = ScrolledText(
+            outer,
+            height=18,
+            wrap=tk.WORD,
+            state=tk.DISABLED,
+            font=("Consolas", 10),
+            bg=PANEL,
+            fg=TEXT,
+            insertbackground=TEXT,
+            relief=tk.FLAT,
+            borderwidth=1,
+            highlightthickness=1,
+            highlightbackground=BORDER,
+            selectbackground=PANEL_ALT,
+            selectforeground=TEXT,
+        )
         self.log.pack(fill=tk.BOTH, expand=True, pady=(8, 0))
-        self.log.tag_configure("NORMAL", foreground="#374151")
-        self.log.tag_configure("MEDIUM", foreground="#b45309")
-        self.log.tag_configure("HIGH", foreground="#b91c1c")
-        self.log.tag_configure("TIMEOUT", foreground="#dc2626")
-        self.log.tag_configure("INFO", foreground="#1f2937")
-        self.log.tag_configure("ERROR", foreground="#991b1b")
+        self.log.tag_configure("NORMAL", foreground="#b0b0b0")
+        self.log.tag_configure("MEDIUM", foreground=MEDIUM)
+        self.log.tag_configure("HIGH", foreground=HIGH)
+        self.log.tag_configure("TIMEOUT", foreground=TIMEOUT)
+        self.log.tag_configure("INFO", foreground=MUTED)
+        self.log.tag_configure("ERROR", foreground=TIMEOUT)
+
+    def _configure_theme(self):
+        style = ttk.Style(self.root)
+        style.theme_use("clam")
+        style.configure("App.TFrame", background=BG)
+        style.configure("App.TLabel", background=BG, foreground=TEXT)
+        style.configure("Muted.TLabel", background=BG, foreground=MUTED)
+        style.configure(
+            "App.TButton",
+            background=PANEL,
+            foreground=TEXT,
+            bordercolor=BORDER,
+            focuscolor=BG,
+            padding=(10, 5),
+        )
+        style.map(
+            "App.TButton",
+            background=[("active", PANEL_ALT), ("disabled", "#242424")],
+            foreground=[("disabled", "#777777")],
+            bordercolor=[("active", BLUE)],
+        )
+        style.configure(
+            "TEntry",
+            fieldbackground=PANEL,
+            foreground=TEXT,
+            insertcolor=TEXT,
+            bordercolor=BORDER,
+            lightcolor=BORDER,
+            darkcolor=BORDER,
+        )
+        style.map(
+            "TEntry",
+            fieldbackground=[("disabled", "#242424")],
+            foreground=[("disabled", "#777777")],
+        )
 
     def start(self):
         if self.worker and self.worker.is_alive():
@@ -186,9 +249,9 @@ class PingTuckzApp:
         plot_w = max(width - pad_l - pad_r, 1)
         plot_h = max(height - pad_t - pad_b, 1)
 
-        canvas.create_text(pad_l, 8, anchor=tk.W, fill="#d1d5db", text="Last 5 minutes")
-        canvas.create_line(pad_l, pad_t, pad_l, pad_t + plot_h, fill="#4b5563")
-        canvas.create_line(pad_l, pad_t + plot_h, pad_l + plot_w, pad_t + plot_h, fill="#4b5563")
+        canvas.create_text(pad_l, 8, anchor=tk.W, fill=BLUE, text="Last 5 minutes")
+        canvas.create_line(pad_l, pad_t, pad_l, pad_t + plot_h, fill=BORDER)
+        canvas.create_line(pad_l, pad_t + plot_h, pad_l + plot_w, pad_t + plot_h, fill=BORDER)
 
         now = self.samples[-1][0] if self.samples else datetime.now()
         cutoff = now - timedelta(seconds=GRAPH_WINDOW_SECONDS)
@@ -199,8 +262,8 @@ class PingTuckzApp:
 
         for value in range(0, y_max + 1, max(50, y_max // 4 or 50)):
             y = pad_t + plot_h - (value / y_max) * plot_h
-            canvas.create_line(pad_l, y, pad_l + plot_w, y, fill="#1f2937")
-            canvas.create_text(pad_l - 8, y, anchor=tk.E, fill="#9ca3af", text=str(value))
+            canvas.create_line(pad_l, y, pad_l + plot_w, y, fill="#242424")
+            canvas.create_text(pad_l - 8, y, anchor=tk.E, fill=MUTED, text=str(value))
 
         points = []
         for ts, lat in visible:
@@ -208,19 +271,19 @@ class PingTuckzApp:
             x = pad_l + (seconds / GRAPH_WINDOW_SECONDS) * plot_w
             if lat is None:
                 y = pad_t + 8
-                canvas.create_line(x - 4, y - 4, x + 4, y + 4, fill="#ef4444", width=2)
-                canvas.create_line(x - 4, y + 4, x + 4, y - 4, fill="#ef4444", width=2)
+                canvas.create_line(x - 4, y - 4, x + 4, y + 4, fill=TIMEOUT, width=2)
+                canvas.create_line(x - 4, y + 4, x + 4, y - 4, fill=TIMEOUT, width=2)
                 continue
             y = pad_t + plot_h - (lat / y_max) * plot_h
-            color = "#9ca3af" if lat < 50 else "#f59e0b" if lat <= 100 else "#ef4444"
+            color = "#b0b0b0" if lat < 50 else MEDIUM if lat <= 100 else HIGH
             canvas.create_oval(x - 2, y - 2, x + 2, y + 2, fill=color, outline=color)
             points.append((x, y))
 
         for first, second in zip(points, points[1:]):
-            canvas.create_line(first[0], first[1], second[0], second[1], fill="#60a5fa", width=1)
+            canvas.create_line(first[0], first[1], second[0], second[1], fill=BLUE, width=1)
 
-        canvas.create_text(pad_l, height - 8, anchor=tk.W, fill="#9ca3af", text="-5 min")
-        canvas.create_text(pad_l + plot_w, height - 8, anchor=tk.E, fill="#9ca3af", text="now")
+        canvas.create_text(pad_l, height - 8, anchor=tk.W, fill=MUTED, text="-5 min")
+        canvas.create_text(pad_l + plot_w, height - 8, anchor=tk.E, fill=MUTED, text="now")
 
 
 def main():

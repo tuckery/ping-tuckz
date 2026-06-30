@@ -1148,8 +1148,10 @@ def run_monitor(
 
     if platform.system() == 'Windows':
         ping_cmd = ['ping.exe', '-l', '64', '-t', target]
+        creationflags = subprocess.CREATE_NO_WINDOW
     else:
         ping_cmd = ['ping', '-s', '56', target]
+        creationflags = 0
 
     proc = None
     try:
@@ -1162,6 +1164,7 @@ def run_monitor(
             universal_newlines=True,
             encoding='utf-8',
             errors='replace',
+            creationflags=creationflags,
         )
 
         emit_log(f"Real-time monitoring started for {target} (all abnormalities grouped by 20s gaps). Press Stop or Ctrl+C to stop.")
