@@ -1,5 +1,7 @@
 import queue
 import threading
+import ctypes
+import platform
 from collections import deque
 from datetime import datetime, timedelta
 import tkinter as tk
@@ -23,6 +25,38 @@ HIGH = "#ff4444"
 TIMEOUT = "#ff6666"
 
 
+def _colorref(hex_color):
+    red = int(hex_color[1:3], 16)
+    green = int(hex_color[3:5], 16)
+    blue = int(hex_color[5:7], 16)
+    return blue << 16 | green << 8 | red
+
+
+def apply_dark_title_bar(root):
+    if platform.system() != "Windows":
+        return
+
+    try:
+        root.update_idletasks()
+        hwnd = ctypes.wintypes.HWND(root.winfo_id())
+        dwm = ctypes.windll.dwmapi
+
+        enabled = ctypes.c_int(1)
+        for attr in (20, 19):
+            dwm.DwmSetWindowAttribute(hwnd, attr, ctypes.byref(enabled), ctypes.sizeof(enabled))
+
+        attributes = {
+            34: _colorref(BORDER),
+            35: _colorref(BG),
+            36: _colorref(TEXT),
+        }
+        for attr, color in attributes.items():
+            value = ctypes.c_int(color)
+            dwm.DwmSetWindowAttribute(hwnd, attr, ctypes.byref(value), ctypes.sizeof(value))
+    except Exception:
+        pass
+
+
 class PingTuckzApp:
     def __init__(self, root):
         self.root = root
@@ -30,6 +64,7 @@ class PingTuckzApp:
         self.root.geometry("980x680")
         self.root.minsize(760, 520)
         self.root.configure(bg=BG)
+        apply_dark_title_bar(self.root)
 
         self.events = queue.Queue()
         self.samples = deque()
@@ -48,6 +83,7 @@ class PingTuckzApp:
 
         self._build_ui()
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
+        self.root.after(100, lambda: apply_dark_title_bar(self.root))
         self.root.after(100, self.process_events)
 
     def _build_ui(self):
