@@ -249,9 +249,12 @@ class PingTuckzApp:
             self.root.destroy()
 
     def append_log(self, message, tag):
+        _top, bottom = self.log.yview()
+        should_follow = bottom >= 0.999
         self.log.configure(state=tk.NORMAL)
         self.log.insert(tk.END, message + "\n", tag)
-        self.log.see(tk.END)
+        if should_follow:
+            self.log.see(tk.END)
         self.log.configure(state=tk.DISABLED)
 
     def get_latest_graph_time(self):
