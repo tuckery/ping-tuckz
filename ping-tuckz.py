@@ -5,7 +5,6 @@ import platform
 import argparse
 from datetime import datetime, timedelta
 from collections import deque
-import sys
 import signal
 import os
 
@@ -27,6 +26,7 @@ NORMAL_WINDOW_PINGS = 10  # Approx pings for buffer (legacy)
 NORMAL_PING_THRESHOLD = 10  # Consecutive normal pings to end chunk
 NORMAL_PING_KEEP_AT_END = 2  # Normal pings to keep at end of chunk
 NORMAL_PING_KEEP_AT_START = 2  # Normal pings before first abnormality
+HTML_REFRESH_SECONDS = 60
 
 # Globals — chunk tracking
 buffer = []  # Unlimited list to retain all pings for long runs
@@ -72,6 +72,7 @@ txt_output_file = None
 TXT_LOG_FILE = None
 HTML_LOG_FILE = None
 current_day_date = None  # The date we are currently writing to
+last_html_write_time = None
 
 
 def parse_args():
@@ -764,12 +765,13 @@ def open_day_files(dt):
     Loads existing event HTML and cumulative stats if files already exist.
     """
     global event_html_list, last_date_header, chunk_metadata_list
-    global txt_output_file, TXT_LOG_FILE, HTML_LOG_FILE, current_day_date
+    global txt_output_file, TXT_LOG_FILE, HTML_LOG_FILE, current_day_date, last_html_write_time
 
     txt_path, html_path = get_day_file_paths(dt)
     TXT_LOG_FILE = txt_path
     HTML_LOG_FILE = html_path
     current_day_date = dt.date()
+    last_html_write_time = None
 
     # Load existing event HTML from prior sessions
     event_html_list = []
@@ -841,15 +843,7 @@ print(f"Today's files: {os.path.basename(TXT_LOG_FILE)} / {os.path.basename(HTML
 
 def signal_handler(sig, frame):
     print("\nInterruption detected. Finalizing any pending abnormality...")
-    global consecutive_normal_count, last_normal_indices
-    if pending_finalization or current_chunk_start is not None:
-        finalize_current_chunk()
-    consecutive_normal_count = 0
-    last_normal_indices = []
-    finalize_html()
-    if txt_output_file and not txt_output_file.closed:
-        txt_output_file.close()
-    sys.exit(0)
+    raise KeyboardInterrupt
 
 signal.signal(signal.SIGINT, signal_handler)
 
@@ -1013,13 +1007,12 @@ def output_chunk(title, all_indices):
         event_html_list.append(html_output)
         chunk_metadata_list.append(chunk_classes)
 
-def finalize_html():
-    """Rewrite the full HTML file with day-level stats and all event chunks.
-    Append session-level summary to TXT.
-    """
+def write_html_report():
+    """Rewrite the full HTML file with day-level stats and all event chunks."""
     global total_pings, total_abnormals, total_normals, total_mediums, total_highs
     global sum_normal_latency, sum_medium_latency, sum_high_latency, sum_abnormal_latency
     global timeout_lines, all_abnormalities_list
+    global last_html_write_time
 
     # Day-level stats for HTML
     avg_normal = sum_normal_latency / total_normals if total_normals > 0 else 0
@@ -1065,8 +1058,13 @@ def finalize_html():
                 f.write('<script id="latency-data" type="application/json">' + graph_json + '</script>\n')
                 f.write(LATENCY_GRAPH_SCRIPT)
             f.write('</body>\n</html>')
+        last_html_write_time = datetime.now()
     except Exception as e:
         print(f"Error writing HTML file: {e}")
+
+def append_session_summary_to_txt():
+    """Append the current session summary to the TXT log."""
+    global timeout_lines, all_abnormalities_list
 
     # Session-level summary for TXT
     if txt_output_file and not txt_output_file.closed:
@@ -1087,6 +1085,20 @@ def finalize_html():
             txt_output_file.flush()
         except Exception as e:
             print(f"Error writing to TXT file: {e}")
+
+def finalize_html(append_summary=True):
+    """Write the HTML report and optionally append the session summary to TXT."""
+    write_html_report()
+    if append_summary:
+        append_session_summary_to_txt()
+
+def maybe_refresh_html(now):
+    """Keep the current day's HTML usable while the process continues running."""
+    if last_html_write_time is None:
+        write_html_report()
+        return
+    if (now - last_html_write_time).total_seconds() >= HTML_REFRESH_SECONDS:
+        write_html_report()
 
 # Run ping subprocess (platform-aware)
 if platform.system() == 'Windows':
@@ -1151,6 +1163,7 @@ try:
             # Append raw line to TXT immediately
             txt_output_file.write(formatted_line + '\n')
             txt_output_file.flush()
+            maybe_refresh_html(now)
             # Buffer with latency=None (treat timeout as abnormality for chunking)
             buffer.append((now, None, formatted_line))
             current_idx = len(buffer) - 1
@@ -1211,6 +1224,7 @@ try:
         # Append raw line to TXT immediately
         txt_output_file.write(formatted_line + '\n')
         txt_output_file.flush()
+        maybe_refresh_html(now)
 
         # Buffer append
         buffer.append((now, latency, formatted_line))
