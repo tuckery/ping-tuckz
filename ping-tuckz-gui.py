@@ -75,6 +75,8 @@ class PingTuckzApp:
         self.worker = None
         self.stop_event = None
         self.close_after_stop = False
+        self.window_drag_offset_x = 0
+        self.window_drag_offset_y = 0
         self.graph_window_seconds = GRAPH_DEFAULT_WINDOW_SECONDS
         self.graph_pan_seconds = 0
         self.drag_start_x = None
@@ -176,8 +178,10 @@ class PingTuckzApp:
         )
         title_label.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         title_label.bind("<ButtonPress-1>", self.begin_window_drag)
+        title_label.bind("<B1-Motion>", self.drag_window)
         title_label.bind("<Double-Button-1>", lambda _event: self.toggle_maximize())
         header.bind("<ButtonPress-1>", self.begin_window_drag)
+        header.bind("<B1-Motion>", self.drag_window)
         header.bind("<Double-Button-1>", lambda _event: self.toggle_maximize())
 
         self._header_button(header, "_", self.minimize_window)
@@ -291,17 +295,18 @@ class PingTuckzApp:
             return
         self.root.destroy()
 
-    def begin_window_drag(self, _event):
-        if platform.system() != "Windows":
+    def begin_window_drag(self, event):
+        if self.root.state() == "zoomed":
             return
-        try:
-            hwnd = ctypes.windll.user32.GetParent(self.root.winfo_id())
-            if not hwnd:
-                hwnd = self.root.winfo_id()
-            ctypes.windll.user32.ReleaseCapture()
-            ctypes.windll.user32.SendMessageW(hwnd, 0x00A1, 2, 0)
-        except Exception:
-            pass
+        self.window_drag_offset_x = event.x_root - self.root.winfo_x()
+        self.window_drag_offset_y = event.y_root - self.root.winfo_y()
+
+    def drag_window(self, event):
+        if self.root.state() == "zoomed":
+            return
+        x = event.x_root - self.window_drag_offset_x
+        y = event.y_root - self.window_drag_offset_y
+        self.root.geometry(f"+{x}+{y}")
 
     def minimize_window(self):
         self.root.iconify()
