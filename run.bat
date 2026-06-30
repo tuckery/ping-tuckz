@@ -2,22 +2,28 @@
 setlocal
 
 set "SCRIPT_DIR=%~dp0"
-set "SCRIPT_PATH=%SCRIPT_DIR%ping-tuckz.py"
+set "SCRIPT_PATH=%SCRIPT_DIR%ping-tuckz-gui.py"
 
 pushd "%SCRIPT_DIR%" >nul
 
-where python >nul 2>nul
+where pythonw >nul 2>nul
 if %ERRORLEVEL% EQU 0 (
-    python "%SCRIPT_PATH%" %*
-    set "EXIT_CODE=%ERRORLEVEL%"
+    start "" pythonw "%SCRIPT_PATH%"
+    set "EXIT_CODE=0"
 ) else (
-    where py >nul 2>nul
+    where pyw >nul 2>nul
     if %ERRORLEVEL% EQU 0 (
-        py -3 "%SCRIPT_PATH%" %*
-        set "EXIT_CODE=%ERRORLEVEL%"
+        start "" pyw -3 "%SCRIPT_PATH%"
+        set "EXIT_CODE=0"
     ) else (
-        echo Error: Python was not found. Install Python 3 or add it to PATH.
-        set "EXIT_CODE=1"
+        where python >nul 2>nul
+        if %ERRORLEVEL% EQU 0 (
+            python "%SCRIPT_PATH%"
+            set "EXIT_CODE=%ERRORLEVEL%"
+        ) else (
+            echo Error: Python was not found. Install Python 3 or add it to PATH.
+            set "EXIT_CODE=1"
+        )
     )
 )
 

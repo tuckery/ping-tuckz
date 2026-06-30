@@ -9,7 +9,7 @@ By default it pings Google's DNS server, `8.8.8.8`. You can also give it another
 On Windows, use the GUI launcher:
 
 ```bat
-run-gui.bat
+run.bat
 ```
 
 The GUI shows the live monitor output, a five-minute rolling latency graph, and Start/Stop controls. If you close the GUI window while monitoring is running, Ping Tuckz stops monitoring, finalizes the report, and then exits.
@@ -17,17 +17,17 @@ The GUI shows the live monitor output, a five-minute rolling latency graph, and 
 To use the terminal monitor instead:
 
 ```bat
-run.bat
+run-cli.bat
 ```
 
 Both launchers start with `8.8.8.8` by default.
 
-To ping something else in terminal mode, put the IP address or hostname after `run.bat`:
+To ping something else in terminal mode, put the IP address or hostname after `run-cli.bat`:
 
 ```bat
-run.bat 1.1.1.1
-run.bat 192.168.1.1
-run.bat example.com
+run-cli.bat 1.1.1.1
+run-cli.bat 192.168.1.1
+run-cli.bat example.com
 ```
 
 In terminal mode, press `Ctrl+C` to stop. When it stops, the tool finishes writing the report files. Closing the terminal window directly may prevent normal shutdown finalization; use the GUI launcher if you want window-close finalization.
