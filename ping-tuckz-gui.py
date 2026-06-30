@@ -275,8 +275,6 @@ class PingTuckzApp:
                 canvas.create_line(x - 4, y + 4, x + 4, y - 4, fill=TIMEOUT, width=2)
                 continue
             y = pad_t + plot_h - (lat / y_max) * plot_h
-            color = "#b0b0b0" if lat < 50 else MEDIUM if lat <= 100 else HIGH
-            canvas.create_oval(x - 2, y - 2, x + 2, y + 2, fill=color, outline=color)
             points.append((x, y))
 
         for first, second in zip(points, points[1:]):
