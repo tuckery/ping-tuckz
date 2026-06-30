@@ -60,8 +60,8 @@ Review result files before sharing them, because timestamps can still reveal whe
 You can also run the script directly:
 
 ```bat
-python ping-tuckz.py
-python ping-tuckz.py 1.1.1.1
+python ping_tuckz_core.py
+python ping_tuckz_core.py 1.1.1.1
 python ping-tuckz-gui.py
 ```
 

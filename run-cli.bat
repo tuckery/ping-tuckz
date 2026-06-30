@@ -2,7 +2,7 @@
 setlocal
 
 set "SCRIPT_DIR=%~dp0"
-set "SCRIPT_PATH=%SCRIPT_DIR%ping-tuckz.py"
+set "SCRIPT_PATH=%SCRIPT_DIR%ping_tuckz_core.py"
 
 pushd "%SCRIPT_DIR%" >nul
 

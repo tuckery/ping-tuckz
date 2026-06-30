@@ -1313,3 +1313,24 @@ def run_monitor(
         emit_log("Monitoring stopped.")
         if on_stopped:
             on_stopped(txt_path=TXT_LOG_FILE, html_path=HTML_LOG_FILE)
+
+
+def print_cli_log(message, status=None, latency=None, timestamp=None):
+    if status in ('HIGH', 'TIMEOUT'):
+        print(f"{RED}{message}{RESET}")
+    elif status == 'MEDIUM':
+        print(f"{ORANGE}{message}{RESET}")
+    else:
+        print(message)
+
+
+def main():
+    args = parse_args()
+    try:
+        run_monitor(args.target, on_log=print_cli_log, refresh_html=True)
+    except KeyboardInterrupt:
+        pass
+
+
+if __name__ == "__main__":
+    main()
