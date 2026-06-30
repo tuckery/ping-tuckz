@@ -189,7 +189,7 @@ cython_debug/
 # .idea/
 
 # Abstra
-#   Abstra is an AI-powered process automation framework.
+#   Abstra is a process automation framework.
 #   Ignore directories containing user credentials, local state, and settings.
 #   Learn more at https://abstra.io/docs
 .abstra/
@@ -209,6 +209,15 @@ tempCodeRunnerFile.py
 # PyPI configuration file
 .pypirc
 
+# Local tool state
+.agents/
+.co[d]ex/
+.cl[a]ude/
+.gr[o]k/
+.cursor/
+.continue/
+.aider*
+
 # Marimo
 marimo/_static/
 marimo/_lsp/
@@ -216,3 +225,8 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Ping Tuckz generated files
+Results/
+old records/
+nul
