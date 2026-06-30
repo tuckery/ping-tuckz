@@ -279,7 +279,10 @@ class PingTuckzApp:
         self.drag_start_x = None
 
     def format_axis_time(self, timestamp, crosses_midnight):
-        return timestamp.strftime("%m-%d %H:%M:%S" if crosses_midnight else "%H:%M:%S")
+        time_text = timestamp.strftime("%I:%M:%S %p").lstrip("0").lower()
+        if crosses_midnight:
+            return f"{timestamp.strftime('%m-%d')} {time_text}"
+        return time_text
 
     def draw_graph(self):
         canvas = self.graph
