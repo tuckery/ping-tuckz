@@ -35,6 +35,10 @@ class PingTuckzApp:
         self.worker = None
         self.stop_event = None
         self.close_after_stop = False
+        self.graph_window_seconds = GRAPH_WINDOW_SECONDS
+        self.graph_pan_seconds = 0
+        self.drag_start_x = None
+        self.drag_start_pan_seconds = 0
 
         self.target_var = tk.StringVar(value=core.DEFAULT_TARGET)
         self.status_var = tk.StringVar(value="Stopped")
@@ -66,9 +70,12 @@ class PingTuckzApp:
         ttk.Label(controls, textvariable=self.status_var, style="App.TLabel").pack(side=tk.LEFT, padx=(0, 12))
         ttk.Label(controls, textvariable=self.latest_var, style="App.TLabel").pack(side=tk.LEFT)
 
-        self.graph = tk.Canvas(outer, height=220, bg=BG, highlightthickness=1, highlightbackground=BORDER)
+        self.graph = tk.Canvas(outer, height=110, bg=BG, highlightthickness=1, highlightbackground=BORDER)
         self.graph.pack(fill=tk.X, pady=(10, 8))
         self.graph.bind("<Configure>", lambda _event: self.draw_graph())
+        self.graph.bind("<ButtonPress-1>", self.on_graph_drag_start)
+        self.graph.bind("<B1-Motion>", self.on_graph_drag)
+        self.graph.bind("<ButtonRelease-1>", self.on_graph_drag_end)
 
         ttk.Label(outer, textvariable=self.files_var, style="Muted.TLabel").pack(fill=tk.X, anchor=tk.W)
 
@@ -140,6 +147,9 @@ class PingTuckzApp:
         self.stop_event = threading.Event()
         self.close_after_stop = False
         self.samples.clear()
+        self.graph_pan_seconds = 0
+        self.drag_start_x = None
+        self.drag_start_pan_seconds = 0
         self.draw_graph()
 
         self.status_var.set("Running")
@@ -212,9 +222,7 @@ class PingTuckzApp:
         timestamp = payload.get("timestamp") or datetime.now()
         latency = payload.get("latency")
         self.samples.append((timestamp, latency))
-        cutoff = timestamp - timedelta(seconds=GRAPH_WINDOW_SECONDS)
-        while self.samples and self.samples[0][0] < cutoff:
-            self.samples.popleft()
+        self.graph_pan_seconds = min(self.graph_pan_seconds, self.get_max_pan_seconds())
 
         self.latest_var.set("Latest: timeout" if latency is None else f"Latest: {latency} ms")
         self.draw_graph()
@@ -240,12 +248,45 @@ class PingTuckzApp:
         self.log.see(tk.END)
         self.log.configure(state=tk.DISABLED)
 
+    def get_latest_graph_time(self):
+        return self.samples[-1][0] if self.samples else datetime.now()
+
+    def get_max_pan_seconds(self):
+        if not self.samples:
+            return 0
+        span_seconds = (self.get_latest_graph_time() - self.samples[0][0]).total_seconds()
+        return max(0, span_seconds - self.graph_window_seconds)
+
+    def clamp_graph_pan(self, value):
+        return max(0, min(value, self.get_max_pan_seconds()))
+
+    def on_graph_drag_start(self, event):
+        self.drag_start_x = event.x
+        self.drag_start_pan_seconds = self.graph_pan_seconds
+
+    def on_graph_drag(self, event):
+        if self.drag_start_x is None:
+            return
+        width = max(self.graph.winfo_width(), 10)
+        pad_l, pad_r = 48, 16
+        plot_w = max(width - pad_l - pad_r, 1)
+        delta_x = event.x - self.drag_start_x
+        delta_seconds = (delta_x / plot_w) * self.graph_window_seconds
+        self.graph_pan_seconds = self.clamp_graph_pan(self.drag_start_pan_seconds + delta_seconds)
+        self.draw_graph()
+
+    def on_graph_drag_end(self, _event):
+        self.drag_start_x = None
+
+    def format_axis_time(self, timestamp, crosses_midnight):
+        return timestamp.strftime("%m-%d %H:%M:%S" if crosses_midnight else "%H:%M:%S")
+
     def draw_graph(self):
         canvas = self.graph
         canvas.delete("all")
         width = max(canvas.winfo_width(), 10)
         height = max(canvas.winfo_height(), 10)
-        pad_l, pad_r, pad_t, pad_b = 48, 16, 16, 30
+        pad_l, pad_r, pad_t, pad_b = 48, 16, 16, 24
         plot_w = max(width - pad_l - pad_r, 1)
         plot_h = max(height - pad_t - pad_b, 1)
 
@@ -253,9 +294,10 @@ class PingTuckzApp:
         canvas.create_line(pad_l, pad_t, pad_l, pad_t + plot_h, fill=BORDER)
         canvas.create_line(pad_l, pad_t + plot_h, pad_l + plot_w, pad_t + plot_h, fill=BORDER)
 
-        now = self.samples[-1][0] if self.samples else datetime.now()
-        cutoff = now - timedelta(seconds=GRAPH_WINDOW_SECONDS)
-        visible = [(ts, lat) for ts, lat in self.samples if ts >= cutoff]
+        self.graph_pan_seconds = self.clamp_graph_pan(self.graph_pan_seconds)
+        right_time = self.get_latest_graph_time() - timedelta(seconds=self.graph_pan_seconds)
+        left_time = right_time - timedelta(seconds=self.graph_window_seconds)
+        visible = [(ts, lat) for ts, lat in self.samples if left_time <= ts <= right_time]
         latencies = [lat for _ts, lat in visible if lat is not None]
         y_max = max(100, max(latencies, default=0))
         y_max = ((y_max + 49) // 50) * 50
@@ -267,8 +309,8 @@ class PingTuckzApp:
 
         points = []
         for ts, lat in visible:
-            seconds = max(0, min(GRAPH_WINDOW_SECONDS, (ts - cutoff).total_seconds()))
-            x = pad_l + (seconds / GRAPH_WINDOW_SECONDS) * plot_w
+            seconds = max(0, min(self.graph_window_seconds, (ts - left_time).total_seconds()))
+            x = pad_l + (seconds / self.graph_window_seconds) * plot_w
             if lat is None:
                 y = pad_t + 8
                 canvas.create_line(x - 4, y - 4, x + 4, y + 4, fill=TIMEOUT, width=2)
@@ -280,8 +322,13 @@ class PingTuckzApp:
         for first, second in zip(points, points[1:]):
             canvas.create_line(first[0], first[1], second[0], second[1], fill=BLUE, width=1)
 
-        canvas.create_text(pad_l, height - 8, anchor=tk.W, fill=MUTED, text="-5 min")
-        canvas.create_text(pad_l + plot_w, height - 8, anchor=tk.E, fill=MUTED, text="now")
+        crosses_midnight = left_time.date() != right_time.date()
+        for idx in range(5):
+            fraction = idx / 4
+            label_time = left_time + timedelta(seconds=self.graph_window_seconds * fraction)
+            x = pad_l + plot_w * fraction
+            anchor = tk.W if idx == 0 else tk.E if idx == 4 else tk.CENTER
+            canvas.create_text(x, height - 8, anchor=anchor, fill=MUTED, text=self.format_axis_time(label_time, crosses_midnight))
 
 
 def main():
