@@ -1,5 +1,7 @@
 import queue
 import threading
+import ctypes
+import platform
 from collections import deque
 from datetime import datetime, timedelta
 import tkinter as tk
@@ -21,6 +23,43 @@ BLUE = "#4a9eff"
 MEDIUM = "#ff8c00"
 HIGH = "#ff4444"
 TIMEOUT = "#ff6666"
+
+
+def apply_captionless_window(root):
+    if platform.system() != "Windows":
+        return
+
+    try:
+        root.update_idletasks()
+        hwnd = ctypes.windll.user32.GetParent(root.winfo_id())
+        if not hwnd:
+            hwnd = root.winfo_id()
+
+        gwl_style = -16
+        ws_caption = 0x00C00000
+        ws_thickframe = 0x00040000
+        ws_sysmenu = 0x00080000
+        ws_minimizebox = 0x00020000
+        ws_maximizebox = 0x00010000
+        swp_nomove = 0x0002
+        swp_nosize = 0x0001
+        swp_nozorder = 0x0004
+        swp_framechanged = 0x0020
+
+        style = ctypes.windll.user32.GetWindowLongW(hwnd, gwl_style)
+        style = (style & ~ws_caption) | ws_thickframe | ws_sysmenu | ws_minimizebox | ws_maximizebox
+        ctypes.windll.user32.SetWindowLongW(hwnd, gwl_style, style)
+        ctypes.windll.user32.SetWindowPos(
+            hwnd,
+            0,
+            0,
+            0,
+            0,
+            0,
+            swp_nomove | swp_nosize | swp_nozorder | swp_framechanged,
+        )
+    except Exception:
+        pass
 
 
 class PingTuckzApp:
@@ -48,6 +87,8 @@ class PingTuckzApp:
 
         self._build_ui()
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
+        self.root.after(10, lambda: apply_captionless_window(self.root))
+        self.root.after(250, lambda: apply_captionless_window(self.root))
         self.root.after(100, self.process_events)
 
     def _build_ui(self):
@@ -124,7 +165,7 @@ class PingTuckzApp:
         header.pack(fill=tk.X, pady=(0, 10))
         header.pack_propagate(False)
 
-        tk.Label(
+        title_label = tk.Label(
             header,
             text="Ping Tuckz",
             bg=PANEL_ALT,
@@ -132,7 +173,32 @@ class PingTuckzApp:
             font=("Segoe UI", 10, "bold"),
             anchor=tk.W,
             padx=10,
-        ).pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        )
+        title_label.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        title_label.bind("<ButtonPress-1>", self.begin_window_drag)
+        title_label.bind("<Double-Button-1>", lambda _event: self.toggle_maximize())
+        header.bind("<ButtonPress-1>", self.begin_window_drag)
+        header.bind("<Double-Button-1>", lambda _event: self.toggle_maximize())
+
+        self._header_button(header, "_", self.minimize_window)
+        self._header_button(header, "[ ]", self.toggle_maximize)
+        self._header_button(header, "X", self.on_close, close=True)
+
+    def _header_button(self, parent, text, command, close=False):
+        button = tk.Label(
+            parent,
+            text=text,
+            bg=PANEL_ALT,
+            fg=TEXT,
+            font=("Segoe UI", 10),
+            width=5,
+            anchor=tk.CENTER,
+        )
+        button.pack(side=tk.LEFT, fill=tk.Y)
+        button.bind("<Button-1>", lambda _event: command())
+        button.bind("<Enter>", lambda _event: button.configure(bg=TIMEOUT if close else BLUE, fg="#ffffff"))
+        button.bind("<Leave>", lambda _event: button.configure(bg=PANEL_ALT, fg=TEXT))
+        return button
 
     def _configure_theme(self):
         style = ttk.Style(self.root)
@@ -224,6 +290,24 @@ class PingTuckzApp:
             self.stop()
             return
         self.root.destroy()
+
+    def begin_window_drag(self, _event):
+        if platform.system() != "Windows":
+            return
+        try:
+            hwnd = ctypes.windll.user32.GetParent(self.root.winfo_id())
+            if not hwnd:
+                hwnd = self.root.winfo_id()
+            ctypes.windll.user32.ReleaseCapture()
+            ctypes.windll.user32.SendMessageW(hwnd, 0x00A1, 2, 0)
+        except Exception:
+            pass
+
+    def minimize_window(self):
+        self.root.iconify()
+
+    def toggle_maximize(self):
+        self.root.state("normal" if self.root.state() == "zoomed" else "zoomed")
 
     def _run_worker(self, target):
         try:
