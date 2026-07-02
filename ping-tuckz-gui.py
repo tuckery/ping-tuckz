@@ -1,7 +1,9 @@
 import queue
 import threading
 import ctypes
+import os
 import platform
+import subprocess
 from collections import deque
 from datetime import datetime, timedelta
 import tkinter as tk
@@ -86,7 +88,8 @@ class PingTuckzApp:
         self.target_var = tk.StringVar(value=core.DEFAULT_TARGET)
         self.status_var = tk.StringVar(value="Stopped")
         self.latest_var = tk.StringVar(value="Latest: -")
-        self.files_var = tk.StringVar(value="Results: -")
+        self.files_var = tk.StringVar(value="Results")
+        self.results_dir = os.path.abspath(core.OUTPUT_DIR)
 
         self._build_ui()
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
@@ -127,7 +130,15 @@ class PingTuckzApp:
         self.graph.bind("<Button-4>", self.on_graph_wheel)
         self.graph.bind("<Button-5>", self.on_graph_wheel)
 
-        ttk.Label(outer, textvariable=self.files_var, style="Muted.TLabel").pack(fill=tk.X, anchor=tk.W)
+        results_row = ttk.Frame(outer, style="App.TFrame")
+        results_row.pack(fill=tk.X, anchor=tk.W)
+        ttk.Label(results_row, textvariable=self.files_var, style="Muted.TLabel").pack(side=tk.LEFT, anchor=tk.W)
+        ttk.Button(
+            results_row,
+            text="Open Folder",
+            command=self.open_results_directory,
+            style="App.TButton",
+        ).pack(side=tk.LEFT, padx=(10, 0))
 
         log_frame = tk.Frame(outer, bg=BORDER, highlightthickness=0, bd=0)
         log_frame.pack(fill=tk.BOTH, expand=True, pady=(8, 0))
@@ -369,7 +380,23 @@ class PingTuckzApp:
         txt_path = payload.get("txt_path")
         html_path = payload.get("html_path")
         if txt_path and html_path:
-            self.files_var.set(f"Results: {txt_path} / {html_path}")
+            self.results_dir = os.path.abspath(os.path.dirname(txt_path) or core.OUTPUT_DIR)
+            self.files_var.set("Results")
+
+    def open_results_directory(self):
+        if not os.path.isdir(self.results_dir):
+            self.append_log(f"Results directory not found: {self.results_dir}", "ERROR")
+            return
+
+        try:
+            if platform.system() == "Windows":
+                os.startfile(self.results_dir)
+            elif platform.system() == "Darwin":
+                subprocess.Popen(["open", self.results_dir])
+            else:
+                subprocess.Popen(["xdg-open", self.results_dir])
+        except Exception as exc:
+            self.append_log(f"Could not open results directory: {exc}", "ERROR")
 
     def handle_stopped(self, payload):
         self.status_var.set("Stopped")
