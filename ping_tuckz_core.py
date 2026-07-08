@@ -114,6 +114,17 @@ html_header = """<!DOCTYPE html>
         .abnormality-medium { background-color: #fff4e6; padding: 2px 5px; }
         .abnormality-high { background-color: #ffe6e6; padding: 2px 5px; }
         #day-banner { position: sticky; top: 0; z-index: 200; padding: 8px 14px 10px 14px; background-color: #1e2a3a; border-left: 5px solid #4a9eff; white-space: normal; }
+        .day-header-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+        .results-day-nav { position: relative; display: inline-flex; align-items: center; gap: 4px; flex: 0 0 auto; }
+        .results-nav-button { width: 30px; height: 30px; display: inline-flex; align-items: center; justify-content: center; padding: 0; border: 1px solid #44607f; border-radius: 4px; background: #24354a; color: #d7eaff; cursor: pointer; }
+        .results-nav-button:hover:not(:disabled), .results-nav-button[aria-expanded="true"] { border-color: #6aaeff; background: #2d4664; color: #ffffff; }
+        .results-nav-button:disabled { opacity: 0.35; cursor: default; }
+        .results-nav-button svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+        .results-date-menu { position: absolute; top: calc(100% + 6px); right: 0; min-width: 230px; max-height: 300px; overflow-y: auto; padding: 5px; background: #111923; border: 1px solid #4a9eff; box-shadow: 0 4px 14px rgba(0,0,0,0.55); z-index: 500; }
+        .results-date-menu[hidden] { display: none; }
+        .results-date-link { display: block; padding: 7px 9px; color: #d7eaff; text-decoration: none; border-radius: 3px; white-space: nowrap; }
+        .results-date-link:hover { background: #26384d; color: #ffffff; }
+        .results-date-link.current { color: #4a9eff; background: #1c2d40; font-weight: bold; }
         .day-title { font-size: 1.5em; font-weight: bold; color: #4a9eff; }
         .day-stats { font-size: 0.85em; color: #c0c8d0; margin-top: 3px; }
         #chunk-nav { margin: 4px 12px; padding: 0; background-color: #1a1a1a; border: 1px solid #444; z-index: 100; white-space: normal; position: relative; }
@@ -581,6 +592,112 @@ def _build_chunk_nav_html(metadata_list, has_graph=False):
     nav_html += '</div>\n<div id="chunk-nav-spacer"></div>\n'
     return nav_html
 
+
+def _result_page_sort_key(file_name):
+    match = re.match(r'^(\d{4})\.(\d{2})\.(\d{2})-', file_name)
+    if not match:
+        return (9999, 99, 99, file_name.lower())
+    year, month, day = (int(part) for part in match.groups())
+    return (year, month, day, file_name.lower())
+
+def _list_result_pages(results_dir=OUTPUT_DIR, current_html_path=None):
+    pages = []
+    if os.path.isdir(results_dir):
+        for file_name in os.listdir(results_dir):
+            if re.match(r'^\d{4}\.\d{2}\.\d{2}-.*\.html?$', file_name, re.IGNORECASE):
+                pages.append(file_name)
+
+    if current_html_path:
+        current_file = os.path.basename(current_html_path)
+        if current_file and current_file not in pages:
+            pages.append(current_file)
+
+    return sorted(set(pages), key=_result_page_sort_key)
+
+def _build_results_day_nav(current_html_path=None, results_dir=OUTPUT_DIR):
+    pages = _list_result_pages(results_dir, current_html_path)
+    pages_json = json.dumps(pages, separators=(',', ':'))
+    nav_html = (
+        '<nav class="results-day-nav" aria-label="Results date navigation">'
+        '<button id="results-prev-day" class="results-nav-button" type="button" aria-label="Previous results day" title="Previous results day">'
+        '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg>'
+        '</button>'
+        '<button id="results-calendar" class="results-nav-button" type="button" aria-label="Open results date list" title="Open results date list" aria-haspopup="true" aria-expanded="false">'
+        '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"></rect><path d="M16 2v4"></path><path d="M8 2v4"></path><path d="M3 10h18"></path></svg>'
+        '</button>'
+        '<button id="results-next-day" class="results-nav-button" type="button" aria-label="Next results day" title="Next results day">'
+        '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18l6-6-6-6"></path></svg>'
+        '</button>'
+        '<div id="results-date-menu" class="results-date-menu" hidden></div>'
+        '</nav>'
+    )
+    script_html = f"""<script>
+(function() {{
+    var resultsPages = {pages_json};
+    var prevButton = document.getElementById('results-prev-day');
+    var nextButton = document.getElementById('results-next-day');
+    var calendarButton = document.getElementById('results-calendar');
+    var menu = document.getElementById('results-date-menu');
+    if (!prevButton || !nextButton || !calendarButton || !menu) return;
+    function currentFileName() {{
+        var path = window.location.pathname || '';
+        return decodeURIComponent(path.substring(path.lastIndexOf('/') + 1));
+    }}
+    function labelFor(fileName) {{
+        var match = fileName.match(/^(\\d{{4}})\\.(\\d{{2}})\\.(\\d{{2}})-/);
+        if (!match) return fileName.replace(/\\.html?$/i, '').replace(/[._-]+/g, ' ');
+        var date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+        return date.toLocaleDateString(undefined, {{ weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }});
+    }}
+    function loadPage(fileName) {{
+        window.location.assign(encodeURI(fileName));
+    }}
+    var current = currentFileName();
+    var currentIndex = resultsPages.indexOf(current);
+    prevButton.disabled = currentIndex <= 0;
+    nextButton.disabled = currentIndex < 0 || currentIndex >= resultsPages.length - 1;
+    prevButton.addEventListener('click', function() {{
+        if (currentIndex > 0) loadPage(resultsPages[currentIndex - 1]);
+    }});
+    nextButton.addEventListener('click', function() {{
+        if (currentIndex >= 0 && currentIndex < resultsPages.length - 1) loadPage(resultsPages[currentIndex + 1]);
+    }});
+    resultsPages.slice().reverse().forEach(function(fileName) {{
+        var link = document.createElement('a');
+        link.className = 'results-date-link' + (fileName === current ? ' current' : '');
+        link.href = encodeURI(fileName);
+        link.textContent = labelFor(fileName);
+        menu.appendChild(link);
+    }});
+    function setMenuOpen(open) {{
+        menu.hidden = !open;
+        calendarButton.setAttribute('aria-expanded', open ? 'true' : 'false');
+    }}
+    calendarButton.addEventListener('click', function(event) {{
+        event.stopPropagation();
+        setMenuOpen(menu.hidden);
+    }});
+    document.addEventListener('click', function(event) {{
+        if (!menu.hidden && !menu.contains(event.target) && event.target !== calendarButton) setMenuOpen(false);
+    }});
+    document.addEventListener('keydown', function(event) {{
+        if (event.key === 'Escape') setMenuOpen(false);
+    }});
+}})();
+</script>
+"""
+    return nav_html, script_html
+
+def _build_day_banner_html(title, stats_html, current_html_path=None, results_dir=OUTPUT_DIR):
+    date_nav_html, date_nav_script = _build_results_day_nav(current_html_path, results_dir)
+    return (
+        f'<div id="day-banner">'
+        f'<div class="day-header-row"><div class="day-title">{title}</div>{date_nav_html}</div>'
+        f'<div class="day-stats">{stats_html}</div>'
+        f'</div>\n'
+        f'{date_nav_script}'
+    )
+
 def get_day_file_paths(dt):
     """Return (txt_path, htm_path) for the given datetime's date.
     Naming: 2026.06.30-Jun.Tues.30.txt / 2026.06.30-Jun.Tues.30.htm
@@ -1033,11 +1150,12 @@ def write_html_report():
 
     # Sticky day-banner replaces the old top summary
     primary_date_str = current_day_date.strftime("%A, %B %d, %Y")
-    banner_html = (
-        f'<div id="day-banner">'
-        f'<div class="day-title">{primary_date_str}</div>'
-        f'<div class="day-stats">Total Pings: {total_pings} | Abnormalities (&gt;50 ms): {total_abnormals} ({abnormality_percentage:.1f}%) | Timeouts: {timeout_count} | Avg Normal: {avg_normal:.1f} ms | Avg Medium: {avg_medium:.1f} ms | Avg High: {avg_high:.1f} ms | Avg Abnormal: {avg_abnormal:.1f} ms</div>'
-        f'</div>\n'
+    stats_html = f'Total Pings: {total_pings} | Abnormalities (&gt;50 ms): {total_abnormals} ({abnormality_percentage:.1f}%) | Timeouts: {timeout_count} | Avg Normal: {avg_normal:.1f} ms | Avg Medium: {avg_medium:.1f} ms | Avg High: {avg_high:.1f} ms | Avg Abnormal: {avg_abnormal:.1f} ms'
+    banner_html = _build_day_banner_html(
+        primary_date_str,
+        stats_html,
+        HTML_LOG_FILE,
+        os.path.dirname(HTML_LOG_FILE) or OUTPUT_DIR,
     )
     # Bottom summary kept for quick reference when scrolled to end
     summary_html = f'<div class="summary"><h3>Day Summary</h3>Total Pings: {total_pings} | Abnormalities (&gt;50 ms): {total_abnormals} ({abnormality_percentage:.1f}%) | Timeouts: {timeout_count} | Average Normal Latency: {avg_normal:.1f} ms | Average Medium Latency: {avg_medium:.1f} ms | Average High Latency: {avg_high:.1f} ms | Average Abnormal Latency: {avg_abnormal:.1f} ms</div>\n'
