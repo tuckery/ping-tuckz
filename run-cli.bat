@@ -1,25 +1,19 @@
 @echo off
-setlocal
+setlocal EnableExtensions EnableDelayedExpansion
 
 set "SCRIPT_DIR=%~dp0"
 set "SCRIPT_PATH=%SCRIPT_DIR%ping_tuckz_core.py"
+set "BOOTSTRAP_PATH=%SCRIPT_DIR%bootstrap-python.bat"
 
 pushd "%SCRIPT_DIR%" >nul
 
-where python >nul 2>nul
-if %ERRORLEVEL% EQU 0 (
-    python "%SCRIPT_PATH%" %*
-    set "EXIT_CODE=%ERRORLEVEL%"
+call "%BOOTSTRAP_PATH%" cli
+if errorlevel 1 (
+    set "EXIT_CODE=!ERRORLEVEL!"
 ) else (
-    where py >nul 2>nul
-    if %ERRORLEVEL% EQU 0 (
-        py -3 "%SCRIPT_PATH%" %*
-        set "EXIT_CODE=%ERRORLEVEL%"
-    ) else (
-        echo Error: Python was not found. Install Python 3 or add it to PATH.
-        set "EXIT_CODE=1"
-    )
+    call "!PING_TUCKZ_PYTHON_EXE!" "%SCRIPT_PATH%" %*
+    set "EXIT_CODE=!ERRORLEVEL!"
 )
 
 popd >nul
-exit /b %EXIT_CODE%
+exit /b !EXIT_CODE!

@@ -210,6 +210,7 @@ tempCodeRunnerFile.py
 .pypirc
 
 # Local tool state
+Logs/
 .agents/
 .co[d]ex/
 .cl[a]ude/

@@ -12,7 +12,11 @@ On Windows, use the GUI launcher:
 run.bat
 ```
 
+If Python 3.12 or newer is already installed, the launcher uses it. If Python is missing, the launcher asks before installing the standard Windows Python package with `winget`. The GUI uses `tkinter`, which is included with the normal Windows Python installer.
+
 The GUI shows the live monitor output, a five-minute rolling latency graph, and Start/Stop controls. If you close the GUI window while monitoring is running, Ping Tuckz stops monitoring, finalizes the report, and then exits.
+
+If the GUI cannot start or crashes, `run.bat` writes the Python error output to `Logs\ping-tuckz-gui.log` and opens an error terminal with the log path. During normal launches, the launcher window closes after starting the GUI.
 
 To use the terminal monitor instead:
 
@@ -31,6 +35,24 @@ run-cli.bat example.com
 ```
 
 In terminal mode, press `Ctrl+C` to stop. When it stops, the tool finishes writing the report files. Closing the terminal window directly may prevent normal shutdown finalization; use the GUI launcher if you want window-close finalization.
+
+## Python Setup
+
+Ping Tuckz is a Python app. The launchers look for Python 3.12 or newer in common Windows locations and through the Python launcher.
+
+If Python is not found, the launchers ask for permission to run:
+
+```bat
+winget install --id Python.Python.3.12 -e --source winget --scope user --accept-source-agreements --accept-package-agreements
+```
+
+If you decline, or if `winget` is unavailable, install Python manually from:
+
+```text
+https://www.python.org/downloads/windows/
+```
+
+After installing manually, run `run.bat` or `run-cli.bat` again.
 
 ## What It Shows
 
