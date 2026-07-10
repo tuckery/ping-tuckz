@@ -145,13 +145,12 @@ def finalize_current_chunk(end_due_to_normal_gap=False, last_normal_indices_at_e
         else:
             break
 
-    # All indices for the chunk: pre normals + abnormalities + post normals
-    all_indices = pre_indices + current_chunk_abnormalities + post_indices
-    if not all_indices:
-        return
-
-    # Sort to ensure order (though should already be sorted)
-    all_indices.sort()
+    # Show every ping from the chunk's displayed start through its displayed end.
+    # The previous list only included abnormal pings plus edge buffers, hiding
+    # normal pings that happened between abnormalities inside the same chunk.
+    chunk_start_idx = pre_indices[0] if pre_indices else first_abnormal_idx
+    chunk_end_idx = post_indices[-1] if post_indices else last_abnormal_idx
+    all_indices = list(range(chunk_start_idx, chunk_end_idx + 1))
 
     # Count for title
     abnormal_count = len(current_chunk_abnormalities)
@@ -292,7 +291,6 @@ def _build_chunk_nav_html(metadata_list, has_graph=False):
     nav_html += '</div>\n<div id="chunk-nav-spacer"></div>\n'
     return nav_html
 
-
 def _result_page_sort_key(file_name):
     match = re.match(r'^(\d{4})\.(\d{2})\.(\d{2})-', file_name)
     if not match:
@@ -314,8 +312,126 @@ def _list_result_pages(results_dir="Results", current_html_path=None):
 
     return sorted(set(pages), key=_result_page_sort_key)
 
+def _parse_result_log_timestamp(line):
+    match = re.match(r'^\((\d{4}-\d{2}-\d{2})\) @ (\d{1,2}:\d{2}:\d{2} [ap]m)', line, re.IGNORECASE)
+    if not match:
+        return None
+    try:
+        return datetime.strptime(f"{match.group(1)} {match.group(2).upper()}", "%Y-%m-%d %I:%M:%S %p")
+    except ValueError:
+        return None
+
+def _read_result_day_stats(results_dir, file_name):
+    txt_path = os.path.join(results_dir, re.sub(r'\.html?$', '.txt', file_name, flags=re.IGNORECASE))
+    stats = {
+        "totalPings": 0,
+        "abnormalCount": 0,
+        "abnormalPct": 0.0,
+        "timeouts": 0,
+        "spanHours": 0.0,
+    }
+    first_ts = None
+    last_ts = None
+    if os.path.exists(txt_path):
+        with open(txt_path, 'r', encoding='utf-8') as f:
+            for raw_line in f:
+                line = raw_line.strip()
+                ts = _parse_result_log_timestamp(line)
+                if ts is None:
+                    continue
+                first_ts = ts if first_ts is None else min(first_ts, ts)
+                last_ts = ts if last_ts is None else max(last_ts, ts)
+                stats["totalPings"] += 1
+                if is_timeout(line):
+                    stats["timeouts"] += 1
+                    continue
+                latency = parse_latency(line)
+                if latency is not None and latency >= SPIKE_THRESHOLD:
+                    stats["abnormalCount"] += 1
+        if stats["totalPings"] > 0:
+            stats["abnormalPct"] = stats["abnormalCount"] / stats["totalPings"] * 100
+        if first_ts and last_ts:
+            stats["spanHours"] = max(0.0, (last_ts - first_ts).total_seconds() / 3600)
+        return stats
+
+    html_path = os.path.join(results_dir, file_name)
+    if os.path.exists(html_path):
+        with open(html_path, 'r', encoding='utf-8') as f:
+            html = f.read(40000)
+        match = re.search(
+            r'Total Pings:\s*(\d+).*?Abnormalities.*?:\s*(\d+)\s*\(([\d.]+)%\).*?Timeouts:\s*(\d+)',
+            html,
+            re.IGNORECASE | re.DOTALL,
+        )
+        if match:
+            stats["totalPings"] = int(match.group(1))
+            stats["abnormalCount"] = int(match.group(2))
+            stats["abnormalPct"] = float(match.group(3))
+            stats["timeouts"] = int(match.group(4))
+    return stats
+
+def _classify_result_day(stats):
+    total_pings = stats["totalPings"]
+    span_hours = stats["spanHours"]
+    abnormal_count = stats["abnormalCount"]
+    abnormal_pct = stats["abnormalPct"]
+    timeouts = stats["timeouts"]
+
+    if total_pings >= 60000:
+        coverage_band = "full"
+    elif total_pings >= 10000:
+        coverage_band = "partial"
+    else:
+        coverage_band = "low"
+
+    if abnormal_count >= 2000 or abnormal_pct >= 3.0 or timeouts >= 250:
+        severity_band = "bad"
+    elif abnormal_count >= 300 or abnormal_pct >= 1.5 or timeouts >= 50:
+        severity_band = "watch"
+    else:
+        severity_band = "good"
+
+    if coverage_band == "low":
+        quality_class = "low-data" if severity_band == "good" else "watch"
+        label = "Low data" if severity_band == "good" else "Noisy sample"
+    elif severity_band == "bad":
+        quality_class = "bad"
+        label = "Bad history"
+    elif severity_band == "watch":
+        quality_class = "watch"
+        label = "Watch"
+    else:
+        quality_class = "good"
+        label = "Good"
+
+    coverage_score = min(100, int(total_pings / 60000 * 100))
+    severity_score = min(100, max(int(abnormal_pct / 3.0 * 100), int(abnormal_count / 2000 * 100), int(timeouts / 250 * 100)))
+    return coverage_band, severity_band, quality_class, label, coverage_score, severity_score
+
+def _build_result_page_metadata(results_dir="Results", current_html_path=None):
+    pages = []
+    for file_name in _list_result_pages(results_dir, current_html_path):
+        stats = _read_result_day_stats(results_dir, file_name)
+        coverage_band, severity_band, quality_class, label, coverage_score, severity_score = _classify_result_day(stats)
+        page = {
+            "file": file_name,
+            "totalPings": stats["totalPings"],
+            "abnormalCount": stats["abnormalCount"],
+            "abnormalPct": round(stats["abnormalPct"], 2),
+            "timeouts": stats["timeouts"],
+            "spanHours": round(stats["spanHours"], 1),
+            "coverageBand": coverage_band,
+            "severityBand": severity_band,
+            "qualityClass": quality_class,
+            "qualityLabel": label,
+            "coverageScore": coverage_score,
+            "severityScore": severity_score,
+        }
+        pages.append(page)
+    return pages
+
 def _build_results_day_nav(current_html_path=None, results_dir="Results"):
-    pages = _list_result_pages(results_dir, current_html_path)
+    pages = _build_result_page_metadata(results_dir, current_html_path)
     pages_json = json.dumps(pages, separators=(',', ':'))
     nav_html = (
         '<nav class="results-day-nav" aria-label="Results date navigation">'
@@ -349,24 +465,44 @@ def _build_results_day_nav(current_html_path=None, results_dir="Results"):
         var date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
         return date.toLocaleDateString(undefined, {{ weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }});
     }}
+    function shortNumber(n) {{
+        if (!n) return '0';
+        if (n >= 1000) return Math.round(n / 1000) + 'k';
+        return String(n);
+    }}
+    function metaFor(page) {{
+        var hours = page.spanHours ? page.spanHours + 'h' : 'n/a';
+        return shortNumber(page.totalPings) + ' pings | ' + page.abnormalPct.toFixed(1) + '% abnormal | ' + page.timeouts + ' timeouts | ' + hours;
+    }}
     function loadPage(fileName) {{
         window.location.assign(encodeURI(fileName));
     }}
     var current = currentFileName();
-    var currentIndex = resultsPages.indexOf(current);
+    var currentIndex = resultsPages.findIndex(function(page) {{ return page.file === current; }});
     prevButton.disabled = currentIndex <= 0;
     nextButton.disabled = currentIndex < 0 || currentIndex >= resultsPages.length - 1;
     prevButton.addEventListener('click', function() {{
-        if (currentIndex > 0) loadPage(resultsPages[currentIndex - 1]);
+        if (currentIndex > 0) loadPage(resultsPages[currentIndex - 1].file);
     }});
     nextButton.addEventListener('click', function() {{
-        if (currentIndex >= 0 && currentIndex < resultsPages.length - 1) loadPage(resultsPages[currentIndex + 1]);
+        if (currentIndex >= 0 && currentIndex < resultsPages.length - 1) loadPage(resultsPages[currentIndex + 1].file);
     }});
-    resultsPages.slice().reverse().forEach(function(fileName) {{
+    resultsPages.slice().reverse().forEach(function(page) {{
         var link = document.createElement('a');
-        link.className = 'results-date-link' + (fileName === current ? ' current' : '');
-        link.href = encodeURI(fileName);
-        link.textContent = labelFor(fileName);
+        var meta = metaFor(page);
+        link.className = 'results-date-link ' + page.qualityClass + (page.file === current ? ' current' : '');
+        link.href = encodeURI(page.file);
+        link.title = page.qualityLabel + ' - ' + meta;
+        link.innerHTML =
+            '<span class="results-quality-dot" aria-hidden="true"></span>' +
+            '<span class="results-date-main"><span class="results-date-label"></span><span class="results-date-meta"></span></span>' +
+            '<span class="results-date-bars" aria-hidden="true"><span class="results-date-bar results-coverage-bar"><span></span></span><span class="results-date-bar results-severity-bar"><span></span></span></span>' +
+            '<span class="results-quality-badge"></span>';
+        link.querySelector('.results-date-label').textContent = labelFor(page.file);
+        link.querySelector('.results-date-meta').textContent = meta;
+        link.querySelector('.results-quality-badge').textContent = page.qualityLabel;
+        link.querySelector('.results-coverage-bar span').style.setProperty('--bar-width', page.coverageScore + '%');
+        link.querySelector('.results-severity-bar span').style.setProperty('--bar-width', page.severityScore + '%');
         menu.appendChild(link);
     }});
     function setMenuOpen(open) {{
@@ -849,18 +985,39 @@ def finalize_html():
         .abnormality-high { background-color: #ffe6e6; padding: 2px 5px; }
         #day-banner { position: sticky; top: 0; z-index: 200; padding: 8px 14px 10px 14px; background-color: #1e2a3a; border-left: 5px solid #4a9eff; white-space: normal; }
         .day-header-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+        .day-title { font-size: 1.5em; font-weight: bold; color: #4a9eff; }
+        .day-stats { font-size: 0.85em; color: #c0c8d0; margin-top: 3px; }
         .results-day-nav { position: relative; display: inline-flex; align-items: center; gap: 4px; flex: 0 0 auto; }
         .results-nav-button { width: 30px; height: 30px; display: inline-flex; align-items: center; justify-content: center; padding: 0; border: 1px solid #44607f; border-radius: 4px; background: #24354a; color: #d7eaff; cursor: pointer; }
         .results-nav-button:hover:not(:disabled), .results-nav-button[aria-expanded="true"] { border-color: #6aaeff; background: #2d4664; color: #ffffff; }
         .results-nav-button:disabled { opacity: 0.35; cursor: default; }
         .results-nav-button svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-        .results-date-menu { position: absolute; top: calc(100% + 6px); right: 0; min-width: 230px; max-height: 300px; overflow-y: auto; padding: 5px; background: #111923; border: 1px solid #4a9eff; box-shadow: 0 4px 14px rgba(0,0,0,0.55); z-index: 500; }
+        .results-date-menu { position: absolute; top: calc(100% + 6px); right: 0; min-width: 360px; max-height: 360px; overflow-y: auto; padding: 5px; background: #111923; border: 1px solid #4a9eff; box-shadow: 0 4px 14px rgba(0,0,0,0.55); z-index: 500; }
         .results-date-menu[hidden] { display: none; }
-        .results-date-link { display: block; padding: 7px 9px; color: #d7eaff; text-decoration: none; border-radius: 3px; white-space: nowrap; }
+        .results-date-link { display: flex; align-items: center; gap: 8px; padding: 7px 9px; color: #d7eaff; text-decoration: none; border-radius: 3px; border-left: 3px solid transparent; white-space: nowrap; }
         .results-date-link:hover { background: #26384d; color: #ffffff; }
         .results-date-link.current { color: #4a9eff; background: #1c2d40; font-weight: bold; }
-        .day-title { font-size: 1.5em; font-weight: bold; color: #4a9eff; }
-        .day-stats { font-size: 0.85em; color: #c0c8d0; margin-top: 3px; }
+        .results-date-link.good { border-left-color: #41c46a; }
+        .results-date-link.watch { border-left-color: #ffb02e; }
+        .results-date-link.bad { border-left-color: #ff5555; }
+        .results-date-link.low-data { border-left-color: #808a96; }
+        .results-quality-dot { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 auto; background: #808a96; box-shadow: 0 0 0 1px rgba(255,255,255,0.18); }
+        .results-date-link.good .results-quality-dot { background: #41c46a; }
+        .results-date-link.watch .results-quality-dot { background: #ffb02e; }
+        .results-date-link.bad .results-quality-dot { background: #ff5555; }
+        .results-date-main { min-width: 0; flex: 1 1 auto; }
+        .results-date-label { display: block; overflow: hidden; text-overflow: ellipsis; }
+        .results-date-meta { display: block; margin-top: 2px; color: #93a8bd; font-size: 0.78em; font-weight: normal; }
+        .results-quality-badge { flex: 0 0 auto; width: 78px; text-align: center; padding: 2px 5px; border-radius: 3px; color: #d7eaff; background: #263342; font-size: 0.72em; font-weight: bold; text-transform: uppercase; }
+        .results-date-link.good .results-quality-badge { color: #cff8d9; background: #173522; }
+        .results-date-link.watch .results-quality-badge { color: #ffe8bd; background: #3a2b12; }
+        .results-date-link.bad .results-quality-badge { color: #ffd4d4; background: #3d1919; }
+        .results-date-link.low-data .results-quality-badge { color: #d5dde6; background: #2a3037; }
+        .results-date-bars { flex: 0 0 52px; display: flex; flex-direction: column; gap: 3px; }
+        .results-date-bar { height: 4px; border-radius: 2px; background: #263342; overflow: hidden; }
+        .results-date-bar span { display: block; height: 100%; width: var(--bar-width, 0%); }
+        .results-coverage-bar span { background: #4a9eff; }
+        .results-severity-bar span { background: #ff5555; }
         #chunk-nav { margin: 4px 12px; padding: 0; background-color: #1a1a1a; border: 1px solid #444; z-index: 100; white-space: normal; position: relative; }
         #chunk-nav.sticky { position: fixed; top: 0; left: 12px; right: 12px; margin: 0; box-shadow: 0 2px 8px rgba(0,0,0,0.5); }
         .chunk-nav-sep { width: 1px; height: 1em; background-color: #444; }
@@ -987,6 +1144,8 @@ for line in all_ping_lines:
         # (Time-based logic removed - chunks are now only split by 10+ consecutive normal pings)
         if current_chunk_start is None:
             current_chunk_start = current_idx
+        abnormalities.append(current_idx)
+        current_chunk_abnormalities.append(current_idx)
         pending_finalization = True
         last_abnormal_time = timestamp
         continue
